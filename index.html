@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+    <title>24/7 Free Bot Hosting</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        pre { background: #222; color: #eee; padding: 1em; max-height: 300px; overflow-y: auto; }
+        .error { color: red; }
+        .tokens { color: #008800; }
+    </style>
+</head>
+<body>
+    <h2>Host your Bot Free (Python/Node.js)</h2>
+    <form method="post" enctype="multipart/form-data" action="/upload">
+        <label>Bot Token*:</label><br>
+        <input type="text" name="token" required><br>
+        <label>Add Code* (.zip, .py, .js):</label><br>
+        <input type="file" name="file" required><br>
+        <button type="submit">Upload & Start</button>
+    </form>
+    <form method="post" action="/add_token">
+        <label>Add Another Bot Token (optional):</label>
+        <input type="text" name="token">
+        <button type="submit">Add Token</button>
+    </form>
+    <br>
+    <button onclick="location.href='/start'">Start</button>
+    <button onclick="location.href='/stop'">Stop</button>
+    <button onclick="location.href='/restart'">Restart</button>
+    <button onclick="location.href='/fixbugs'">Fix Bugs</button>
+    <br><br>
+    {% if tokens %}
+        <b>Current Tokens:</b> <span class="tokens">{{tokens}}</span><br>
+    {% endif %}
+    {% if last_error %}
+        <b class="error">Last Error:</b> <pre>{{last_error}}</pre>
+    {% endif %}
+    <b>Console Log:</b>
+    <pre id="console_log">{{console_log}}</pre>
+    <script>
+    setInterval(function(){
+        fetch("/console").then(r=>r.text()).then(txt=>{
+            document.getElementById("console_log").textContent = txt;
+        });
+    }, 2000);
+    </script>
+</body>
+</html>
