@@ -1,4 +1,3 @@
-```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -90,7 +89,6 @@ const lastErrorEl = document.getElementById("lastError");
 
 let es = null;
 
-// helper
 async function api(path, opts){
   opts = opts || {};
   try {
@@ -218,7 +216,6 @@ fixBtn.addEventListener("click", async ()=>{
   }
 });
 
-// console helpers
 function appendConsole(line){
   consoleEl.textContent += line + "\n";
   consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -234,7 +231,6 @@ function hideError(){
   lastErrorEl.textContent = "";
 }
 
-// SSE stream
 function startStream(){
   if(es) try { es.close(); } catch(e){}
   es = new EventSource("/stream");
@@ -242,11 +238,9 @@ function startStream(){
     appendConsole(e.data);
   };
   es.onerror = function(){
-    // reconnect logic handled by EventSource automatically
   };
 }
 
-// load initial logs & status
 async function refreshStatus(){
   const s = await api("/api/status");
   if(s.ok){
@@ -269,4 +263,5 @@ window.addEventListener("load", ()=>{
   startStream();
 });
 </script>
-```
+</body>
+</html>

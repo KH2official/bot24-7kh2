@@ -6,8 +6,9 @@ Single-page bot host (Flask) with:
 - Multiple tokens
 - Start / Stop / Restart / Fix Bugs controls (AJAX)
 - Live console via Server-Sent Events (SSE) — single-page UI, no navigation
-Run: pip install -r requirements.txt
-      python app.py
+Run:
+    pip install -r requirements.txt
+    python app.py
 """
 import os
 import sys
@@ -15,17 +16,15 @@ import shutil
 import threading
 import subprocess
 import time
-import zipfile
 from collections import deque
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory, Response, abort
+from flask import Flask, request, jsonify, send_from_directory, Response
 from werkzeug.utils import secure_filename
 import utils
 
 APP_ROOT = Path(__file__).parent.resolve()
 USERBOT_DIR = APP_ROOT / "userbot"
 LOG_FILE = APP_ROOT / "console.log"
-ALLOWED = utils.ALLOWED_EXTENSIONS
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200MB upload limit (adjust)
@@ -37,17 +36,15 @@ state = {
     "tokens": [],
     "mainfile": None,
     "last_error": "",
-    "log_lines": deque([], maxlen=5000),  # keep recent lines
+    "log_lines": deque([], maxlen=5000),
     "log_event": threading.Event(),
     "log_thread": None,
 }
 
 
 def append_log(line: str):
-    """Append a line to in-memory buffer and file, and notify SSE listeners."""
     text = line.rstrip("\n")
     state["log_lines"].append(text)
-    # write to file (append)
     try:
         with open(LOG_FILE, "a", encoding="utf-8", errors="replace") as f:
             f.write(text + "\n")
@@ -83,7 +80,6 @@ def spawn_log_reader(proc: subprocess.Popen):
         except Exception as e:
             append_log(f"[host] log reader error: {e}")
         finally:
-            # Wait for process to exit to capture return code
             try:
                 rc = proc.poll()
                 if rc is None:
@@ -101,7 +97,6 @@ def spawn_log_reader(proc: subprocess.Popen):
 
 
 def start_bot():
-    """Start the bot process if mainfile exists. Returns dict status."""
     with state["process_lock"]:
         if state["process"] is not None:
             return {"ok": False, "error": "Bot already running."}
@@ -109,34 +104,28 @@ def start_bot():
             return {"ok": False, "error": "No uploaded code. Upload code first."}
         mainfile = state["mainfile"]
         if not mainfile:
-            # try detect
             mf = utils.detect_main_file(USERBOT_DIR)
             if mf:
                 state["mainfile"] = mf
                 mainfile = mf
             else:
                 return {"ok": False, "error": "Main bot file not found (.py or .js)."}
-        # Prepare env
         env = os.environ.copy()
         for i, tkn in enumerate(state["tokens"]):
             env_key = f"BOT_TOKEN{i+1}"
             env[env_key] = tkn
-        # Ensure dependencies installed (best-effort)
         try:
             append_log("[host] checking & installing dependencies (if any)...")
             utils.fix_dependencies(USERBOT_DIR)
         except Exception as e:
-            append_log(f"[host] dependency install failed: {e}")
-            # proceed anyway
-
-        # Launch
+            append_log(f"[host] dependency install warning: {e}")
         try:
             clear_logs()
             append_log(f"[host] starting {mainfile} ...")
-            if mainfile.endswith(".js"):
-                cmd = ["node", mainfile]
-            elif mainfile.endswith(".py"):
-                cmd = [sys.executable, mainfile]
+            if str(mainfile).endswith(".js"):
+                cmd = ["node", str(mainfile)]
+            elif str(mainfile).endswith(".py"):
+                cmd = [sys.executable, str(mainfile)]
             else:
                 return {"ok": False, "error": f"Unsupported main file type: {mainfile}"}
             proc = subprocess.Popen(
@@ -183,11 +172,6 @@ def index():
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
-    """
-    Form data:
-      - token (required)
-      - file (required) .zip / .py / .js
-    """
     try:
         token = request.form.get("token", "").strip()
         file = request.files.get("file")
@@ -198,24 +182,20 @@ def api_upload():
         filename = secure_filename(file.filename)
         if not utils.allowed_file(filename):
             return jsonify({"ok": False, "error": "Invalid file type. Allowed: zip, py, js."}), 400
-        # Reset previous upload
         if USERBOT_DIR.exists():
             shutil.rmtree(USERBOT_DIR, ignore_errors=True)
         USERBOT_DIR.mkdir(parents=True, exist_ok=True)
         saved_path = USERBOT_DIR / filename
         file.save(str(saved_path))
-        # extract or copy
         try:
             utils.unzip_and_fix(saved_path, USERBOT_DIR)
         except Exception as e:
             state["last_error"] = str(e)
             append_log(f"[host] upload error: {e}")
             return jsonify({"ok": False, "error": f"Upload/extract failed: {e}"}), 400
-        # detect main file
         mf = utils.detect_main_file(USERBOT_DIR)
         state["mainfile"] = mf
         state["tokens"] = [token]
-        # Auto-start
         res = start_bot()
         if not res.get("ok"):
             state["last_error"] = res.get("error", "unknown")
@@ -229,7 +209,11 @@ def api_upload():
 
 @app.route("/api/add_token", methods=["POST"])
 def api_add_token():
-    token = request.json.get("token", "").strip()
+    try:
+        data = request.get_json(force=True)
+        token = (data.get("token") or "").strip()
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid JSON"}), 400
     if not token:
         return jsonify({"ok": False, "error": "Token required"}), 400
     state["tokens"].append(token)
@@ -296,37 +280,31 @@ def api_status():
 
 @app.route("/api/logs", methods=["GET"])
 def api_logs():
-    # return recent logs as array
     return jsonify({"lines": list(state["log_lines"])})
 
 
 @app.route("/stream")
 def stream():
     def event_stream():
-        # On connect, send all recent lines then stream new ones.
         for line in list(state["log_lines"]):
             yield f"data: {line.replace('\\n', ' ')}\n\n"
-        # Clear event flag
         state["log_event"].clear()
+        last_sent = len(state["log_lines"])
         while True:
-            # wait until new log line available or timeout for heartbeat
             state["log_event"].wait(timeout=15)
-            while state["log_lines"]:
-                # We only want to stream new lines since last yield.
-                break
-            # send any new lines since last send
-            # We will send lines present at end of deque (some duplicates OK - clients will handle)
-            for line in list(state["log_lines"])[-50:]:
-                yield f"data: {line.replace('\\n', ' ')}\n\n"
+            # send new lines only
+            lines = list(state["log_lines"])
+            if len(lines) > last_sent:
+                for line in lines[last_sent:]:
+                    yield f"data: {line.replace('\\n', ' ')}\n\n"
+                last_sent = len(lines)
             state["log_event"].clear()
     return Response(event_stream(), mimetype="text/event-stream")
 
 
 if __name__ == "__main__":
-    # Create static/userbot directories if missing
     (APP_ROOT / "static").mkdir(exist_ok=True)
     USERBOT_DIR.mkdir(exist_ok=True)
-    # ensure log exists
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     LOG_FILE.touch(exist_ok=True)
     print("Starting host on http://0.0.0.0:8080")
