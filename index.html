@@ -1,48 +1,272 @@
+```html
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-    <title>24/7 Free Bot Hosting</title>
-    <style>
-        body { font-family: sans-serif; margin: 2em; }
-        pre { background: #222; color: #eee; padding: 1em; max-height: 300px; overflow-y: auto; }
-        .error { color: red; }
-        .tokens { color: #008800; }
-    </style>
+  <meta charset="utf-8"/>
+  <title>Advanced Single-Page Bot Host</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { font-family: Inter, Roboto, Arial; background:#0f1724; color:#e6eef8; margin:0; }
+    .container { max-width:1100px; margin:24px auto; padding:20px; background:#0b1220; border-radius:10px; box-shadow:0 6px 30px rgba(2,6,23,0.7); }
+    h1 { margin:0 0 8px 0; font-size:20px; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    input[type="text"], input[type="file"] { padding:8px 10px; border-radius:6px; border:1px solid #223; background:#071126; color:#dbeafe; }
+    button { background:linear-gradient(90deg,#0ea5a2,#06b6d4); border:0; color:#012; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.ghost { background:transparent; border:1px solid #123; color:#9fd3e0; }
+    .controls { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+    .panel { background:linear-gradient(180deg,#061428,#071427); padding:12px; border-radius:8px; border:1px solid #112; width:100%; }
+    .left { flex:1 1 320px; min-width:320px; }
+    .right { flex:1 1 460px; min-width:320px; }
+    .tokens { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+    .token-pill { background:#022b31; padding:6px 10px; border-radius:999px; border:1px solid #063b44; color:#9eeff0; font-size:13px; }
+    pre.console { background:#000814; color:#cfe7ff; padding:12px; border-radius:8px; height:420px; overflow:auto; font-size:13px; line-height:1.4; }
+    .status { font-weight:700; padding:6px 10px; border-radius:999px; }
+    .status.running { background:linear-gradient(90deg,#065f46,#10b981); color:#e6fff6; }
+    .status.idle { background:linear-gradient(90deg,#374151,#0f1724); color:#9aa4b2; }
+    .meta { color:#8aa6b6; font-size:13px; margin-top:6px; }
+    .error { color:#ffb4b4; background:#3b0b0b; padding:8px; border-radius:6px; margin-top:8px; }
+    footer { margin-top:12px; color:#567; font-size:13px; }
+  </style>
 </head>
 <body>
-    <h2>Host your Bot Free (Python/Node.js)</h2>
-    <form method="post" enctype="multipart/form-data" action="/upload">
-        <label>Bot Token*:</label><br>
-        <input type="text" name="token" required><br>
-        <label>Add Code* (.zip, .py, .js):</label><br>
-        <input type="file" name="file" required><br>
-        <button type="submit">Upload & Start</button>
-    </form>
-    <form method="post" action="/add_token">
-        <label>Add Another Bot Token (optional):</label>
-        <input type="text" name="token">
-        <button type="submit">Add Token</button>
-    </form>
-    <br>
-    <button onclick="location.href='/start'">Start</button>
-    <button onclick="location.href='/stop'">Stop</button>
-    <button onclick="location.href='/restart'">Restart</button>
-    <button onclick="location.href='/fixbugs'">Fix Bugs</button>
-    <br><br>
-    {% if tokens %}
-        <b>Current Tokens:</b> <span class="tokens">{{tokens}}</span><br>
-    {% endif %}
-    {% if last_error %}
-        <b class="error">Last Error:</b> <pre>{{last_error}}</pre>
-    {% endif %}
-    <b>Console Log:</b>
-    <pre id="console_log">{{console_log}}</pre>
-    <script>
-    setInterval(function(){
-        fetch("/console").then(r=>r.text()).then(txt=>{
-            document.getElementById("console_log").textContent = txt;
-        });
-    }, 2000);
-    </script>
-</body>
-</html>
+  <div class="container">
+    <h1>Advanced Single-Page Bot Host — Run your bot 24/7 (Free)</h1>
+    <div class="row">
+      <div class="left panel">
+        <strong>Upload & Launch</strong>
+        <div style="height:8px"></div>
+        <div class="row">
+          <input id="tokenInput" type="text" placeholder="Bot Token (required)"/>
+          <input id="fileInput" type="file" />
+          <button id="uploadBtn">Upload & Start</button>
+        </div>
+        <div style="height:10px"></div>
+        <div class="row">
+          <input id="addTokenInput" type="text" placeholder="Add another token (optional)"/>
+          <button id="addTokenBtn" class="ghost">Add Token</button>
+        </div>
+        <div class="tokens" id="tokenList"></div>
+
+        <div class="controls" style="margin-top:12px;">
+          <button id="startBtn">Start</button>
+          <button id="restartBtn" class="ghost">Restart</button>
+          <button id="stopBtn" class="ghost">Stop</button>
+          <button id="fixBtn" class="ghost">Fix Bugs</button>
+          <div style="flex:1"></div>
+          <div id="statusBadge" class="status idle">Idle</div>
+        </div>
+        <div class="meta" id="metaInfo">Main file: <span id="mainFile">—</span> · Tokens: <span id="tokenCount">0</span></div>
+        <div id="lastError" class="error" style="display:none"></div>
+      </div>
+
+      <div class="right panel">
+        <strong>Live Console</strong>
+        <div style="height:8px"></div>
+        <pre class="console" id="console"></pre>
+      </div>
+    </div>
+
+    <footer>
+      Notes: Upload a .zip (or single .py/.js). The host will auto-extract, detect main file (index.js/main.py/bot.py/app.py), set BOT_TOKEN1..N env vars, install deps if package.json or requirements.txt are present, and run the bot locally on the host.
+    </footer>
+  </div>
+
+<script>
+const uploadBtn = document.getElementById("uploadBtn");
+const fileInput = document.getElementById("fileInput");
+const tokenInput = document.getElementById("tokenInput");
+const addTokenBtn = document.getElementById("addTokenBtn");
+const addTokenInput = document.getElementById("addTokenInput");
+const tokenList = document.getElementById("tokenList");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const restartBtn = document.getElementById("restartBtn");
+const fixBtn = document.getElementById("fixBtn");
+const consoleEl = document.getElementById("console");
+const statusBadge = document.getElementById("statusBadge");
+const mainFileEl = document.getElementById("mainFile");
+const tokenCountEl = document.getElementById("tokenCount");
+const lastErrorEl = document.getElementById("lastError");
+
+let es = null;
+
+// helper
+async function api(path, opts){
+  opts = opts || {};
+  try {
+    const res = await fetch(path, opts);
+    const json = await res.json().catch(()=>({}));
+    return { ok: res.ok, status: res.status, json };
+  } catch (e) {
+    return { ok:false, error: e.message };
+  }
+}
+
+function setStatus(running){
+  if(running){
+    statusBadge.classList.remove("idle");
+    statusBadge.classList.add("running");
+    statusBadge.textContent = "Running";
+  } else {
+    statusBadge.classList.remove("running");
+    statusBadge.classList.add("idle");
+    statusBadge.textContent = "Idle";
+  }
+}
+
+function renderTokens(arr){
+  tokenList.innerHTML = "";
+  arr.forEach((t,i)=>{
+    const el = document.createElement("div");
+    el.className = "token-pill";
+    el.textContent = `BOT_TOKEN${i+1}`;
+    tokenList.appendChild(el);
+  });
+  tokenCountEl.textContent = arr.length;
+}
+
+uploadBtn.addEventListener("click", async ()=>{
+  const token = tokenInput.value.trim();
+  const file = fileInput.files[0];
+  if(!token){
+    alert("Token is required.");
+    return;
+  }
+  if(!file){
+    alert("Select a file to upload (.zip, .py, .js).");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("token", token);
+  fd.append("file", file, file.name);
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = "Uploading...";
+  const res = await api("/api/upload", { method: "POST", body: fd });
+  uploadBtn.disabled = false;
+  uploadBtn.textContent = "Upload & Start";
+  if(!res.ok){
+    showError(res.json?.error || "Upload failed.");
+    return;
+  }
+  hideError();
+  refreshStatus();
+});
+
+addTokenBtn.addEventListener("click", async ()=>{
+  const token = addTokenInput.value.trim();
+  if(!token) return;
+  addTokenBtn.disabled = true;
+  const res = await api("/api/add_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  addTokenBtn.disabled = false;
+  if(res.ok){
+    addTokenInput.value = "";
+    refreshStatus();
+  } else {
+    showError(res.json?.error || "Failed to add token");
+  }
+});
+
+startBtn.addEventListener("click", async ()=>{
+  startBtn.disabled = true;
+  const res = await api("/api/start", { method: "POST" });
+  startBtn.disabled = false;
+  if(!res.ok){
+    showError(res.json?.error || "Start failed");
+  } else {
+    hideError();
+    refreshStatus();
+  }
+});
+
+stopBtn.addEventListener("click", async ()=>{
+  stopBtn.disabled = true;
+  const res = await api("/api/stop", { method: "POST" });
+  stopBtn.disabled = false;
+  if(!res.ok){
+    showError(res.json?.error || "Stop failed");
+  } else {
+    hideError();
+    refreshStatus();
+  }
+});
+
+restartBtn.addEventListener("click", async ()=>{
+  restartBtn.disabled = true;
+  const res = await api("/api/restart", { method: "POST" });
+  restartBtn.disabled = false;
+  if(!res.ok){
+    showError(res.json?.error || "Restart failed");
+  } else {
+    hideError();
+    refreshStatus();
+  }
+});
+
+fixBtn.addEventListener("click", async ()=>{
+  fixBtn.disabled = true;
+  const res = await api("/api/fixbugs", { method: "POST" });
+  fixBtn.disabled = false;
+  if(!res.ok){
+    showError(res.json?.error || "Fix failed");
+  } else {
+    hideError();
+    appendConsole("[host] attempted to fix bugs (deps reinstall).");
+  }
+});
+
+// console helpers
+function appendConsole(line){
+  consoleEl.textContent += line + "\n";
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+
+function showError(msg){
+  lastErrorEl.style.display = "block";
+  lastErrorEl.textContent = msg;
+}
+
+function hideError(){
+  lastErrorEl.style.display = "none";
+  lastErrorEl.textContent = "";
+}
+
+// SSE stream
+function startStream(){
+  if(es) try { es.close(); } catch(e){}
+  es = new EventSource("/stream");
+  es.onmessage = function(e){
+    appendConsole(e.data);
+  };
+  es.onerror = function(){
+    // reconnect logic handled by EventSource automatically
+  };
+}
+
+// load initial logs & status
+async function refreshStatus(){
+  const s = await api("/api/status");
+  if(s.ok){
+    setStatus(s.json.running);
+    renderTokens(s.json.tokens || []);
+    mainFileEl.textContent = s.json.mainfile || "—";
+    if(s.json.last_error){
+      showError(s.json.last_error);
+    } else hideError();
+  }
+  const logs = await api("/api/logs");
+  if(logs.ok && logs.json.lines){
+    consoleEl.textContent = logs.json.lines.join("\n") + "\n";
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+}
+
+window.addEventListener("load", ()=>{
+  refreshStatus();
+  startStream();
+});
+</script>
+```
